@@ -1,0 +1,89 @@
+name: Sync ElvUI-Epoch Updates
+
+on:
+  schedule:
+    - cron: '0 */3 * * *' # Every 3 hours
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Checkout your private repo
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Configure Git
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      # 3. Add upstream remote and detect default branch
+      - name: Add upstream and detect default branch
+        id: upstream
+        run: |
+          git remote add upstream https://github.com/Bennylavaa/ElvUI-Epoch.git || true
+          git fetch upstream --quiet || { echo "Failed to fetch upstream"; exit 1; }
+
+          # Detect upstream default branch
+          UPSTREAM_DEFAULT=$(git remote show upstream | grep 'HEAD branch' | awk '{print $NF}')
+          echo "Upstream default branch is $UPSTREAM_DEFAULT"
+          echo "UPSTREAM_DEFAULT=$UPSTREAM_DEFAULT" >> $GITHUB_ENV
+
+      # 4. Sync main with upstream default branch, excluding .github
+      - name: Sync main with upstream default branch
+        id: sync
+        run: |
+          git checkout main || { echo "Failed to checkout main"; exit 1; }
+
+          # Reset index to upstream default branch but do not change working files
+          git fetch upstream ${UPSTREAM_DEFAULT} || { echo "Failed to fetch upstream branch"; exit 1; }
+          git restore --source=upstream/${UPSTREAM_DEFAULT} --staged . || true
+          git restore --source=upstream/${UPSTREAM_DEFAULT} -- . ':!/.github' || true
+
+          # Stage all changes
+          git add . || true
+
+          # Commit if there are meaningful changes (excluding .github)
+          if git diff --cached -- . ':!.github' | grep -q .; then
+            git commit -m "Sync with upstream, excluding .github directory" || { echo "Failed to commit changes"; exit 1; }
+
+            # Push changes if needed
+            if [ "$(git rev-parse HEAD)" != "$(git rev-parse origin/main)" ]; then
+              TAG="v$(date +'%Y.%m.%d-%H%M')"
+              if git tag "$TAG" 2>/dev/null; then
+                git push origin main --force --tags || { echo "Failed to push changes"; exit 1; }
+                echo "SYNCED=true" >> $GITHUB_ENV
+                echo "TAG=$TAG" >> $GITHUB_ENV
+              else
+                echo "Tag $TAG already exists, skipping push"
+                echo "SYNCED=false" >> $GITHUB_ENV
+              fi
+            else
+              echo "No changes to sync"
+              echo "SYNCED=false" >> $GITHUB_ENV
+            fi
+          else
+            echo "No meaningful changes to sync (excluding .github)"
+            echo "SYNCED=false" >> $GITHUB_ENV
+          fi
+
+      # 5. Send Discord notification if synced
+      - name: Send Discord Notification
+        if: env.SYNCED == 'true'
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "Discord webhook URL is not set"
+            exit 1
+          fi
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"username\":\"Addon Sync Bot\",\"embeds\":[{\"title\":\"ElvUI-Epoch Updates Detected\",\"description\":\"Private repo main branch synced to [Bennylavaa/ElvUI-Epoch](https://github.com/Bennylavaa/ElvUI-Epoch) default branch.\",\"color\":3066993,\"fields\":[{\"name\":\"New Tag\",\"value\":\"${{ env.TAG }}\"}]}]}" \
+               "$DISCORD_WEBHOOK" || { echo "Failed to send Discord notification"; exit 1; }
