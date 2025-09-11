@@ -77,7 +77,7 @@ end
 function mod:Initialize()
 	self.db = E.db.databars
 
-	self.maxExpansionLevel = MAX_PLAYER_LEVEL_TABLE[GetAccountExpansionLevel()]
+	self.maxExpansionLevel = 60
 
 	self:ExperienceBar_Load()
 	self:PetExperienceBar_Load()
