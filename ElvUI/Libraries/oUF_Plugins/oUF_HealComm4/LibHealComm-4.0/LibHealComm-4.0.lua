@@ -1465,7 +1465,7 @@ if( playerClass == "SHAMAN" ) then
 				end
 
 				spellPower = spellPower + (playerCurrentRelic and lhwTotems[playerCurrentRelic] or 0)
-				spellPower = spellPower * ((spellData[spellName].coeff * 1.88) + talentData[TidalWaves].spent * 0.02)
+				spellPower = spellPower * ((spellData[spellName].coeff * 1.88) + talentData[TidalWaves].current * 0.02)
 			end
 
 			healAmount = calculateGeneralAmount(spellData[spellName].levels[rank], healAmount, spellPower, spModifier, healModifier)
